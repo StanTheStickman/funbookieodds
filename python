@@ -1,0 +1,80 @@
+import requests
+
+# endpoint for NFL odds from "the odds API" website
+url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
+api_key = "Api Key"
+
+# parameters for the request
+params = {
+    'apiKey': api_key,
+    'regions': 'us',              # U.S. sportsbooks
+    'markets': 'h2h',              # Only head-to-head (moneyline) odds
+    'oddsFormat': 'american',      # American odds format
+    'dateFormat': 'iso'            # ISO date format
+}
+
+# function to convert odds to implied probability
+def implied_probability(odds):
+    if odds < 0:
+        return -odds / (-odds + 100)
+    else:
+        return 100 / (odds + 100)
+
+# Send GET request to fetch NFL odds
+response = requests.get(url, params=params)
+
+# Check successful response
+if response.status_code == 200:
+    odds_data = response.json()
+    print("Odds Comparison for NFL Games Across Bookmakers:")
+    
+    for game in odds_data:
+        print(f"\nGame: {game['home_team']} vs {game['away_team']}")
+        
+        best_favorite = None
+        best_underdog = None
+        best_favorite_odds = None
+        best_underdog_odds = None
+        bookmaker_comparison = {}
+        
+        for bookmaker in game['bookmakers']:
+            bookmaker_name = bookmaker['title']
+            h2h_market = next((market for market in bookmaker['markets'] if market['key'] == 'h2h'), None)
+            
+            if h2h_market:
+                for outcome in h2h_market['outcomes']:
+                    team = outcome['name']
+                    odds = outcome['price']
+                    
+                    # Update the favorite and underdog based on odds
+                    if odds < 0:  # Favorite
+                        if best_favorite is None or odds < best_favorite_odds:
+                            best_favorite = team
+                            best_favorite_odds = odds
+                    else:  # Underdog
+                        if best_underdog is None or odds > best_underdog_odds:
+                            best_underdog = team
+                            best_underdog_odds = odds
+                    
+                    # Store bookmaker odds for comparison
+                    bookmaker_comparison[bookmaker_name] = bookmaker_comparison.get(bookmaker_name, {})
+                    bookmaker_comparison[bookmaker_name][team] = odds
+
+        # Display best favorite and underdog with their odds
+        if best_favorite and best_favorite_odds:
+            fav_prob = implied_probability(best_favorite_odds)
+            print(f"  Best Favorite: {best_favorite} with odds {best_favorite_odds} (Implied Win Probability: {fav_prob:.2%})")
+        if best_underdog and best_underdog_odds:
+            und_prob = implied_probability(best_underdog_odds)
+            print(f"  Best Underdog: {best_underdog} with odds {best_underdog_odds} (Implied Win Probability: {und_prob:.2%})")
+
+        # Display bookmaker comparison for close odds
+        if best_favorite and best_underdog and abs(best_favorite_odds) - abs(best_underdog_odds) < 50:
+            print("  Close Matchup: Odds are close, indicating a potentially balanced game.")
+
+        # Print all bookmaker odds for reference
+        print("  Bookmaker Comparison:")
+        for bookmaker, odds in bookmaker_comparison.items():
+            print(f"    {bookmaker}: {odds}")
+else:
+    print("Error:", response.status_code, response.json())
